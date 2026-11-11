@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+# 生成产物
+*.png
+*.drawio
+*.drawio.bkp
+.$*
+output/
