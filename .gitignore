@@ -7,3 +7,6 @@ __pycache__/
 *.drawio.bkp
 .$*
 output/
+node_modules/
+.render-cache/
+*.render.json

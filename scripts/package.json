@@ -1,0 +1,9 @@
+{
+  "name": "network-topology-drawio-render",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local draw.io XML to PNG using the official export engine",
+  "scripts": { "test": "node --test test_render_drawio.cjs" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "playwright": "^1.51.0" }
+}

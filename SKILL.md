@@ -1,78 +1,84 @@
 ---
 name: network-topology-drawio
-description: 按固定的"方案附图级"风格生成可编辑的 draw.io 网络拓扑图 / 组网图（楼宇机房分区、Cisco 图标、虚拟化/主备设备组框、按速率着色连线、链路聚合椭圆、底部图例+设备表+说明），并通过官方 draw.io MCP（npx @drawio/mcp / https://mcp.draw.io/mcp）打开、预览、编辑与查找图形。凡是用户要画网络拓扑、组网图、机房/数据中心拓扑、搬迁前后对比图、改造方案附图、.drawio 拓扑，或提到"沿用之前的拓扑风格"，都应使用本 skill，即使没有明确说 draw.io。Generate editable draw.io network topology diagrams in a consistent proposal-grade style using the official draw.io MCP.
+description: 生成、重构可编辑 draw.io 网络拓扑/组网图（机房分区、Cisco 图标、设备组框、语义链路、底部三栏），自动导出真实 PNG、看图审查、自行修正迭代。用户要画网络拓扑、机房/数据中心拓扑、搬迁前后对比、方案附图、.drawio 拓扑或沿用拓扑风格时使用。Generate editable proposal-grade topologies with real PNG rendering and mandatory visual iteration.
 ---
 
-# 网络拓扑图（draw.io）方案附图风格 · 官方 MCP 版
+# 网络拓扑：生成 → 渲染 → 看图 → 自行修正
 
-把用户提供的组网描述生成**可编辑的 `.drawio` 文件**，风格统一、像真实拓扑而不是示意图，适合直接作为方案附件给客户讲解。全流程不依赖本机安装的 draw.io 桌面程序。
+默认交付**可编辑 `.drawio` + 同版本真实 `.png`**。不要求 draw.io 桌面版。**lint 0 错误不等于视觉通过；不能只列改进建议等用户催。**
 
-## 分工（为什么这样设计）
+## 资源与按需读取（节省上下文）
 
-- **版面由本 skill 的 Python 库精确生成**（`scripts/topo_lib.py`）。本风格的价值在于精确坐标、对称版式、直线连线与聚合标记，这些靠确定性代码最稳定；MCP 的自动布局做不到同样效果。
-- **官方 draw.io MCP 负责打开 / 预览 / 编辑 / 查找图形**：
-  - `open_drawio_xml`（本地 `npx @drawio/mcp`）或 `create_diagram`（托管 `https://mcp.draw.io/mcp`）：把生成的 XML 打开到 draw.io 编辑器，交给用户查看与微调。已验证往返后几何坐标完全不变。
-  - `search_shapes`：需要新设备图标时查官方 style 字符串。
-  - `list_pages` / `get_page` / `set_page`：对已有 `.drawio`（含用户手工改过的）做按页读取与回写。
-- **自检由 `scripts/topo_check.py` 完成**（纯 Python + Pillow）：几何碰撞检查 + 布局预览图。MCP 不提供导出 PNG，这一步替代了以前依赖桌面版导出的自检。
+- `scripts/topo_lib.py`：布局/组件/输出 XML，优先 import，不重写 XML 生成器。
+- `scripts/topo_check.py`：几何 lint + `.preview.png`（色块近似预览，不是最终图）。
+- `scripts/render_drawio.cjs`：官方 draw.io 引擎 + Playwright/Chrome → 真实 PNG 与 `.render.json`。不要每次重写浏览器导出脚本。
+- `scripts/drawio_mcp.py`：官方 MCP 打开/编辑/查图标。**不传 `postLayout`、`routing`、`direction`**，避免破坏布局。
+- 首次规划/改风格读 `references/style-guide.md`；组件 API 按需查函数，组合不熟才读 `examples/dc_relocation_example.py`，无需每次通读整个库和示例。
+- 首次配置导图、故障排查或详细视觉门禁读 `references/rendering.md`；日常按下方命令执行即可。
 
-**禁止**向 MCP 传 `postLayout`（ELK 会重排全部设备）、`routing`（libavoid 会把直线改成正交折线）、`direction`。这三个参数会直接破坏本风格。
+## 必须执行的工作流
 
-## 资源
+### 1. 事实与备份
 
-- 详细视觉规范：`references/style-guide.md`（颜色、尺寸、线型、版式坐标、检查清单、MCP 使用约定）。首次使用或调整风格时阅读。
-- 绘图库：`scripts/topo_lib.py`（样式常量、组件函数、`check()`、`open_in_drawio()`），直接 import，不要重新手写 XML。
-- 自检：`scripts/topo_check.py`。
-- MCP 客户端：`scripts/drawio_mcp.py`（环境里未挂载 draw.io MCP 工具时，用它调用同一套官方工具）。
-- 完整参考实现：`examples/dc_relocation_example.py`（医院数据中心区搬迁前/后两张图，覆盖全部组件）。动手前先通读。
+提取机房、设备型号/数量/角色/状态、链路两端/条数/速率/介质，以及聚合/主备/集群关系。未提供的信息留待确认；**不编造端口、连接、速率、采购状态或冗余方案**。来源矛盾保留本次口径并提示。已有图先经 MCP `get` 读当前页，修改前备份，不盲目覆盖手工调整。
 
-## 工作流程
+规划先于坐标：左旧右新，同层对齐；跨楼骨干/ISL 预留独立走线带，不穿服务器接入扇形。前后图保持机房左右顺序和层级含义；搬迁前目标区无已知设备时可缩窄为说明区，不为对称浪费半张纸或填虚构设备。
 
-1. **梳理事实清单**（先于画图）
-   逐条提取：机房/楼宇、每台设备（型号、数量、角色、新增/原有/迁移状态）、每条链路（两端、条数、速率、介质、是否聚合）、虚拟化/堆叠/主备/集群关系、明确排除不画的内容。资料没给的信息（端口号、逐端口接线、速率、厂商、新增与否）记为"未提供"，**不要补全猜测**——这是给客户的正式材料，编造的细节比留白危害大。描述矛盾时以用户"最新确认"为准；关键信息缺失且影响画法时再问。
+### 2. 生成与几何检查
 
-2. **规划版面**
-   每个机房一个分区；改造/搬迁类遵循**左旧右新**，前后两张图分区位置一致。纵向分层（核心/汇聚 → 安全 → 服务器交换 → 计算），左侧加分层标签。套用 style-guide 第 11 节模板定坐标；成对设备间距 160，服务器间距 160。
+生成脚本放任务临时目录，使用 `topo_lib` 组件。新图标先经官方 MCP `search_shapes` 查真实 stencil。**存储、交换机、服务器必须有可识别设备图标，不能只用文字框代替**。图符、物理链路、标签、清单数量一致。
 
-3. **写生成脚本**（放临时目录，如 `%TEMP%\<项目>_topo\gen.py`，不要放进用户交付目录）
-   ```python
-   import sys; sys.path.insert(0, r'<skill 目录>/scripts')
-   from topo_lib import *
-   d = Doc(2420, 1580)
-   title(d, '标题', '副标题'); layers(d, ROWS)
-   zone(d, ...); pair(d, ...); parallel_h(d, ...); dual_home(d, ...)
-   bottom_panels(d, 1160, 380, legend_args, table_args, notes_items)
-   d.save(r'<用户目录>\<标题>.drawio', '页名')
-   ```
-   需要库里没有的图标时，先用 MCP `search_shapes`（或 `python scripts/drawio_mcp.py search cisco wireless ap`）取官方 style，再加入 `ICON`。
+以下 `<skill>` 为当前 skill 根目录，工具调用用绝对路径：
 
-4. **自检并迭代**（不可省略）
-   `python scripts/topo_check.py <file.drawio> --png <临时目录>/x.preview.png`，然后：
-   - 修复全部 `[ERROR]`（连线压字、穿过设备、文字重叠、文字压图标），处理 `[WARN]`（留白失衡、超出页面）。
-   - 查看预览 PNG（问题处有洋红框），确认整体排版、对称和留白；必要时用 `--crop` 局部放大。
-   - 改坐标重新生成，直到 0 错误、版面干净。预览是近似渲染（图标显示为色块），用于判断布局，不代表最终观感。
+```bash
+python3 <skill>/scripts/topo_check.py <图.drawio> --png <临时目录>/图.preview.png
+```
 
-5. **用官方 MCP 打开给用户确认**
-   - 已挂载 MCP 工具：调用 `open_drawio_xml`，`content` 传整个 `.drawio` 文件内容，只用默认参数（可选 `lightbox`）。
-   - 未挂载：`python scripts/drawio_mcp.py open <file.drawio>`（加 `--browser` 自动打开浏览器，`--hosted` 走托管服务器）。
-   把返回的 draw.io 编辑器链接给用户；最终文件仍是本地 `.drawio`。
+修复全部 ERROR 并处理 WARN；近似预览仅用于定位，不能代替下一步。
 
-6. **修改已有图**：用户在 draw.io 里改过文件后再提修改时，先 `get_page` 读取当前页，基于现状修改，再 `set_page` 回写（或重新运行生成脚本，取决于改动范围），然后重复第 4 步。
+### 3. 导出实际 PNG（强制）
 
-7. **交付说明**：告诉用户文件位置、图面组织方式，并**列出所有按"不编造"处理的点**（规格未知用灰线、连到设备组框、未标新增的设备、说明框里的内容），请其确认。
+```bash
+node <skill>/scripts/render_drawio.cjs <图.drawio> --overwrite
+# 批量复用浏览器，避免反复初始化：
+node <skill>/scripts/render_drawio.cjs <搬迁前.drawio> <搬迁后.drawio> --overwrite
+```
 
-## 关键风格规则（速记）
+默认同名 PNG/报告；只有本次明确要替换已有生成物才加 `--overwrite`。首次可运行 `--doctor`；依赖与隐私说明见 `references/rendering.md`。不得依赖其他项目的临时缓存/硬编码路径。
 
-- 颜色语义固定：深蓝=全网核心，墨绿=汇聚/原核心降级，红=防火墙，灰=闲置/下架；分区绿=旧/现网，蓝=新/目标，灰=闲置。
-- 同型号不同角色用 **颜色 + 组框胶囊标签 + 状态徽标** 三重区分。
-- 连线全部直线无箭头；速率决定颜色（10GE 橙、1GE 蓝、跨楼骨干深橙加粗、未知规格灰）；并行链路画足条数并加聚合椭圆。
-- 有竖向连线穿过的设备，标签放左右两侧；组框上方有连线进入时，胶囊标签放下边框（`bottom=True` / `tag_bottom=True`）。
-- 资料只说"上联某虚拟化组"时，线连到组框而非某台成员。
-- 资料给出的数字在图形、标注、说明三处一致。
-- 底部三栏：图例（只列出现的元素）| 设备清单或变更说明 | 编号说明（末条注明端口与逐端口接线以实施确认为准）。
+### 4. 看图 → 修正 → 再验证（强制）
 
-## 环境
+**必须用图片查看工具打开真实 PNG**：先全图，再按需放大密集局部；双图还需对照。只读 XML/JSON、只看色块预览、只看局部都不算通过。检查：
 
-- Python 3.8+（生成与 lint 仅用标准库；预览图需 Pillow）。
-- Node.js 18+ 与 `npx @drawio/mcp`（本地 MCP，可缓存离线使用；打开编辑器链接需能访问 app.diagrams.net 或 `DRAWIO_BASE_URL` 指定的自建实例）；或使用托管 `https://mcp.draw.io/mcp`。
-- 可选配置见 `.env.example`（`DRAWIO_MCP_CMD`、`DRAWIO_MCP_URL`、`DRAWIO_BASE_URL`、`PREVIEW_FONT`）。
+- 图标/中文/表格实际加载，无缺图、截断、白屏或多余截图白边。
+- 全图尺寸下名称/速率可读；放大字号/图标，不能只提高 DPI。
+- 无压字/穿设备；交叉易追踪且不误连，ISL 与接入线分开。
+- 无无意义留白/左右失衡；底栏按内容收紧，说明不抢主体，名称不重复堆叠。
+- 集群范围、物理互联、复制逻辑不同；Fabric 独立性、条数、状态与来源一致；存储图标为主体、控制器为下级。
+
+发现可修复问题，**自行修改当前页/生成脚本 → lint → 重新导出 → 再看图**；不得停在建议清单。只优化表达，不改变设备/接线事实，事实不清标待确认。每次改图都要刷新 PNG，不能交付旧截图。
+
+初稿后默认最多 **3 轮修正**；通过即停。临时简记“问题→修改→复检”，只保留必要图片/局部/简短日志，不向模型重复灌完整 XML 和长 URL。3 轮仍有关键问题、环境阻断或连续两轮无改善时停止并说明，不能声称已通过。用户要求继续时可再迭代。
+
+### 5. 交付
+
+最终再用官方 MCP 打开 `.drawio`：
+
+```bash
+python3 <skill>/scripts/drawio_mcp.py open <图.drawio>
+```
+
+长编辑链接写入项目 Markdown 入口，回复只给入口；修改后同步刷新链接（它是快照）。交付 draw.io + PNG、关键改进、验证状态和未补猜项，保留备份。
+
+**降级**：浏览器/依赖/网络阻断时可交付 draw.io 与明确标注的布局预览，但必须写“实际渲染/视觉验证未完成”及原因，不能把 `.preview.png` 改名充当正式 PNG，更不能说已看过最终图。
+
+## 表达约束速记
+
+- 白底浅色分区：绿旧/现网、蓝新/目标、灰闲置；深蓝核心、墨绿汇聚、红安全、灰闲置。
+- 默认 10GE 橙、1GE 蓝、未知灰。FC 可沿用来源的 A 蓝/B 橙，必须明确“Fabric + 速率”图例，不得误写以太网速率；ISL 未给速率用灰，距离不是速率。
+- 物理线无箭头，N 条画足；仅明确聚合才画聚合椭圆。只说上联设备组就连组框，不猜成员/端口。
+- 集群优先范围框、复制用带说明的逻辑虚线，主备另用 HA，勿用完全相同线型混淆。
+- 标签放无连线的一侧；胶囊不机械固定上下。存储图标+名称为主、控制器为子，避免重复标题。
+- 底部三栏：仅实际出现元素的图例 | 清单/变更表 | 4–6 条说明；末条注明端口与逐端口接线以实施确认为准。
+
+环境：Python 3.8+（近似预览需 Pillow）、Node.js 18+、Playwright + Chrome/Chromium；MCP 用 `npx @drawio/mcp`。完整安装、CLI、自建渲染与缓存规则见 `references/rendering.md`/`.env.example`。不提交浏览器、`node_modules`、大型官方 JS 或项目图纸到 skill 仓库。

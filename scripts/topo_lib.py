@@ -15,7 +15,8 @@ topo_lib —— 生成"方案附图级"网络拓扑 draw.io 文件的小型库�
   check('xxx.drawio', preview_png='xxx.preview.png')   # 几何自检 + 布局预览（纯 Python）
   open_in_drawio('xxx.drawio')                         # 经官方 draw.io MCP 生成编辑器链接
 
-不依赖任何已安装的 draw.io 桌面程序；渲染/编辑交给官方 MCP（npx @drawio/mcp 或 https://mcp.draw.io/mcp）。
+不依赖 draw.io 桌面程序。编辑/打开交给官方 MCP；真实 PNG 使用同目录 render_drawio.cjs
+（官方渲染引擎 + Playwright/Chrome）。check() 的色块预览不是最终渲染，交付前须导出真实 PNG 并看图复检。
 """
 import os
 import sys
